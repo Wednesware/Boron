@@ -22,63 +22,18 @@ try:
     event = require("fluorine.scripting").event
     title_tag = require("fluorine.structuring").title
 except ImportError:
-    require = None
+    raise RuntimeError("boron: Nitrogen is not installed. Please install it using 'pip install wwn'.")
 
-    class _MissingUI:
-        @staticmethod
-        def __getattr__(name):
-            raise RuntimeError("Nitrogen is not installed. Please install it using 'pip install wwn'.")
-
-    def run(*args, **kwargs):
-        if require is not None:
-            return require("iodine").run(*args, **kwargs)
-        return None
-
-    class Keymap:
-        def on(self, *args, **kwargs):
-            def decorator(func):
-                return func
-            return decorator
-
-    TextInput = None
-    class SelectMenu:
-        def __init__(self, *args, **kwargs):
-            self.options = kwargs.get("options", [])
-            self.title = kwargs.get("title", "")
-    Color = type("Color", (), {"gray": "", "reset": ""})()
-    App = _MissingUI
-    info_window = _MissingUI.__getattr__
-    error_window = _MissingUI.__getattr__
-    Terminal = type("Terminal", (), {"clear": staticmethod(lambda: None)})
-    Page = _MissingUI
-    div_tag = _MissingUI
-    h1_tag = _MissingUI
-    document = None
-    Script = _MissingUI
-    event = None
-    title_tag = _MissingUI
-
-
-VERSION: str = "26.1"
+VERSION: str = "26.2"
 
 BORON_DIR: Path = Path.home() / ".boron"
 DEFAULT_CACHE_DIR: Path = BORON_DIR / "cache"
 DEFAULT_BOOKMARKS_DIR: Path = BORON_DIR / "bookmarks"
 LOOKUP_HISTORY_FILE: Path = DEFAULT_CACHE_DIR / "lookups.json"
-HELP_TEXT: str = "[help/ctrl+q]"
-EXIT_TEXT: str = "[exit/ctrl+c]"
-BACK_TEXT: str = "[back 1 page]"
+EXIT_TEXT: str = "[exit]"
+BACK_TEXT: str = "[back]"
 
 keymap: Keymap = Keymap() # type: ignore
-@keymap.on("CTRL_Q")
-def handle_ctrl_q(_) -> None:
-    info_window(
-        "CTRL+Q: Show this help message.\n"
-        "CTRL+M: Toggle multi-select mode.\n"
-        "CTRL+B: Bookmark selected file.\n"
-        "CTRL+SHIFT+B: Bookmark the whole lookup.\n"
-        "CTRL+C: Exit the program."
-    )
 @keymap.on("CTRL_C")
 def handle_ctrl_c(_) -> None:
     print("Operation cancelled by user.")
@@ -563,16 +518,14 @@ def source(force: bool = False, cache_dir: Path | str | None = None, source_file
     return generated
 
 def _print_help() -> None:
-    print("Boron v26.1")
-    print("")
-    print("Usage: boron <command> [arguments]")
+    print(f"\033[94m{Color.bold}Boron v26.1{Color.reset}")
+    print(f"{Color.gray}Library-themed Python library and CLI for resolving information and documentation from Boron repositories on GitHub.{Color.reset}")
     print("")
     print("Commands:")
-    print("  help        Show this help message")
-    print("  license     Show the project license")
-    print("  lookup      Look up a Boron identifier and print the tree")
-    print("  source      Regenerate or update SOURCE.md")
-    print("  version     Show the current version")
+    print("  help                         Show this help message")
+    print("  license                      Show the license")
+    print("  lookup \"<author>'s <repo>\"   Resolve and look up a Boron repository.")
+    print("  bm                           See your bookmarks")
 
 def _print_license() -> None:
     with open(Path(__file__).parent / "LICENSE.md") as file:
@@ -586,7 +539,7 @@ def source_this(info: Information) -> None:
         print(f"Source: {info.name}")
 
 
-def _open_page_in_app(page: Page) -> None:
+def _open_page_in_app(page: Page) -> None: # type: ignore
     try:
         app: App = App(page, silent=True) # type: ignore
         app.open()
@@ -621,7 +574,7 @@ def _information_select_loop(info: Information, title: str, *, source_author: st
                     options |= {heading: child}
                 continue
         options[child_name] = child
-    options |= {"---": None, HELP_TEXT: None, EXIT_TEXT: None}
+    options |= {EXIT_TEXT: None}
     while True:
         Terminal.clear()
         answer: str = run(SelectMenu(
@@ -630,9 +583,6 @@ def _information_select_loop(info: Information, title: str, *, source_author: st
         ), global_keymap=keymap)
         if not answer:
             error_window("Invalid selection.")
-            continue
-        elif answer == HELP_TEXT:
-            handle_ctrl_q(None)
             continue
         elif answer == EXIT_TEXT:
             handle_ctrl_c(None)
@@ -669,8 +619,6 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
         file_bookmark_label,
         lookup_bookmark_label,
         "source this",
-        "---",
-        HELP_TEXT,
         BACK_TEXT,
         EXIT_TEXT
     ]
@@ -758,8 +706,6 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
             options[4] = "unbookmark this lookup" if has_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "bookmark this lookup"
         elif answer == "source this":
             source_this(info)
-        elif answer == HELP_TEXT:
-            handle_ctrl_q(None)
         elif answer == BACK_TEXT:
             Terminal.clear()
             return
@@ -832,7 +778,7 @@ def main(argv: list[str] | None = None) -> int:
         case "bm":
             bookmarks = list_bookmarks(DEFAULT_BOOKMARKS_DIR)
             if not bookmarks:
-                print("...Very empty in here...")
+                print("...It's very empty in here...")
                 return 0
 
             options = {entry["label"]: entry for entry in bookmarks}
@@ -867,17 +813,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
             print(loaded)
-            return 0
-    
-        case "source":
-            args = argv[1:]
-            force = "--force" in args
-            if "--file" in args:
-                index = args.index("--file")
-                source_path = args[index + 1] if index + 1 < len(args) else None
-            else:
-                source_path = None
-            _handle_source(force=force, source_path=source_path)
             return 0
 
         case _:
