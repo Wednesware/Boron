@@ -37,6 +37,33 @@ lookup --help
 
 - Python 3.10+
 - Nitrogen 26.58+ (`pip install wwn`)
+- Pyperclip (`pip install pyperclip`) only for `copy to clipboard` action
+- Desktop app preview (`open in app`) requires a GTK or Qt backend on Linux
+
+If you want the in-app preview to work on Linux, install one of the following:
+
+```bash
+python -m pip install PyQt5 qtpy
+# or
+python -m pip install PySide6 qtpy
+# or on Debian/Ubuntu:
+sudo apt install python3-gi libgtk-3-0 libgtk-3-dev
+```
+
+If neither backend is available, Boron will fall back to opening the generated page in your browser instead of crashing.
+- Desktop app preview (`open in app`) requires a GTK or Qt backend on Linux
+
+If you want the in-app preview to work on Linux, install one of the following:
+
+```bash
+python -m pip install PyQt5 qtpy
+# or
+python -m pip install PySide6 qtpy
+# or on Debian/Ubuntu:
+sudo apt install python3-gi libgtk-3-0 libgtk-3-dev
+```
+
+If neither backend is available, Boron will fall back to opening the generated page in your browser instead of crashing.
 
 ## Library API
 

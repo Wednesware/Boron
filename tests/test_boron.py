@@ -220,3 +220,32 @@ def test_source_deduplicates_repositories(tmp_path):
 
     assert generated.count("- [CoolDev/b_GamingInformation](https://github.com/CoolDev/b_GamingInformation)") == 1
     assert generated.count("- [JohnathanJohn/b_plaqueinfo](https://github.com/JohnathanJohn/b_plaqueinfo)") == 1
+
+
+def test_save_and_list_bookmarks_round_trip(tmp_path):
+    bookmark_dir = tmp_path / "bookmarks"
+    path = boron.save_bookmark("# Example\nHello", "CoolDev", "b_GamingInformation", "README.md", bookmarks_dir=bookmark_dir)
+
+    assert path.parent == bookmark_dir
+    assert path.name.endswith(".bbm")
+
+    bookmarks = boron.list_bookmarks(bookmark_dir)
+    assert len(bookmarks) == 1
+    assert bookmarks[0]["author"] == "CoolDev"
+    assert bookmarks[0]["source"] == "b_GamingInformation"
+    assert bookmarks[0]["name"] == "README.md"
+    assert bookmarks[0]["content"] == "# Example\nHello"
+    assert bookmarks[0]["label"] == "README.md from CoolDev's b_GamingInformation"
+
+
+def test_lookup_bookmarks_are_loaded_as_information_trees(tmp_path):
+    bookmark_dir = tmp_path / "bookmarks"
+    info = boron.Information(name="b_GamingInformation", kind="directory")
+    info.children["README.md"] = boron.Information(name="README.md", kind="file", content="# Title\nHello")
+
+    path = boron.save_lookup_bookmark(info, "CoolDev", "b_GamingInformation", bookmarks_dir=bookmark_dir)
+    loaded = boron.load_bookmark(path)
+
+    assert isinstance(loaded, boron.Information)
+    assert loaded.name == "b_GamingInformation"
+    assert loaded["README.md"].content == "# Title\nHello"
