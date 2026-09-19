@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import urllib
 from pathlib import Path
 import zipfile
@@ -60,6 +62,8 @@ def test_parse_identifier_examples():
     assert boron.parse_identifier("CoolDev's Gaming Information") == ("CoolDev", "b_GamingInformation")
     assert boron.parse_identifier("Johnathan John's PLAQUE INFO") == ("JohnathanJohn", "b_plaqueinfo")
     assert boron.parse_identifier("ashley myers' movies") == ("AshleyMyers", "b_movies")
+    assert boron.parse_identifier("documentation of CoolDev's Gaming Information") == ("CoolDev", "GamingInformation")
+    assert boron.parse_identifier("license of CoolDev's Gaming Information") == ("CoolDev", "GamingInformation")
 
 
 def test_lookup_builds_information_tree(monkeypatch, tmp_path):
@@ -204,6 +208,112 @@ def test_lookup_shell_uses_child_items(monkeypatch, capsys):
     assert result == info
     captured = capsys.readouterr()
     assert "Lookup complete." in captured.out
+
+
+def test_ensure_venv_dependencies_installs_required_packages(monkeypatch, tmp_path):
+    calls = []
+    venv_dir = tmp_path / "venv"
+
+    def fake_ensure_venv(path=None):
+        venv_dir.mkdir(parents=True, exist_ok=True)
+        return venv_dir
+
+    def fake_python(path):
+        return path / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+    def fake_run(args, check=None, stdout=None, **kwargs):
+        calls.append(args)
+        return 0
+
+    monkeypatch.setattr(boron, "_ensure_venv", fake_ensure_venv)
+    monkeypatch.setattr(boron, "_venv_python", fake_python)
+    monkeypatch.setattr(boron.subprocess, "run", fake_run)
+
+    python = boron._ensure_venv_dependencies(venv_dir)
+
+    assert python == fake_python(venv_dir)
+    assert calls[0][:4] == [str(python), "-m", "pip", "install"]
+    assert "wwn" in calls[0]
+    assert "pywebview" in calls[0]
+    assert "pyperclip" in calls[0]
+    assert "PySide6" in calls[0]
+    assert "qtpy" in calls[0]
+
+
+def test_open_page_in_app_prefers_pywebview(monkeypatch, tmp_path):
+    called = {}
+
+    class FakeWebView:
+        @staticmethod
+        def create_window(title, url):
+            called["window"] = (title, url)
+
+        @staticmethod
+        def start(gui=None):
+            called["start"] = gui
+
+    monkeypatch.setitem(sys.modules, "webview", FakeWebView)
+    monkeypatch.setattr(boron, "App", None)
+    monkeypatch.setattr(boron, "_webview_backend", lambda: "qt")
+    monkeypatch.setattr(boron.webbrowser, "open", lambda *args, **kwargs: called.setdefault("browser", True))
+
+    boron._open_page_in_app(str(tmp_path / "index.html"))
+
+    assert called["window"][0] == "Boron"
+    assert called["start"] == "qt"
+    assert "browser" not in called
+
+
+def test_build_page_html_uses_marked_js():
+    html = boron._build_page_html("Docs", "# Title\n\n- one\n")
+
+    assert "<title>Docs</title>" in html
+    assert "marked.min.js" in html
+    assert "marked.parse(rawMarkdown)" in html
+    assert "raw-markdown" in html
+
+
+def test_main_recovers_nitrogen_before_help(monkeypatch, tmp_path):
+    calls = []
+
+    monkeypatch.setattr(boron, "_ensure_boron_dir", lambda *_args, **_kwargs: tmp_path)
+    monkeypatch.setattr(boron, "_ensure_venv_dependencies", lambda *_args, **_kwargs: tmp_path / "venv" / "bin" / "python")
+    monkeypatch.setattr(boron, "_ensure_nitrogen", lambda: True)
+    monkeypatch.setattr(boron, "nitrogen_missing", False)
+    monkeypatch.setattr(boron.os, "execv", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(boron.Path, "resolve", lambda self: self)
+
+    result = boron.main(["help"])
+
+    assert result == 0
+    assert len(calls) == 1
+
+
+def test_source_this_appends_human_readable_entry_once(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    info = boron.Information(
+        name="README.md",
+        kind="file",
+        path=str(tmp_path / "lookup" / "README.md"),
+        content="# Title\nHello",
+    )
+    source_info = boron.Information(name="b_GamingInformation", kind="directory")
+
+    boron.source_this(
+        info,
+        source_info=source_info,
+        source_info_author="CoolDev",
+        source_info_title="CoolDev's Gaming Information",
+    )
+    boron.source_this(
+        info,
+        source_info=source_info,
+        source_info_author="CoolDev",
+        source_info_title="CoolDev's Gaming Information",
+    )
+
+    contents = (tmp_path / "SOURCE.md").read_text(encoding="utf-8")
+    assert contents == "- File: README.md | Lookup: CoolDev's Gaming Information | Author: CoolDev\n"
 
 
 def test_source_deduplicates_repositories(tmp_path):

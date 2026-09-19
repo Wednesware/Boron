@@ -4,159 +4,112 @@
 
 Library-themed Python library and CLI for resolving information and documentation from Boron repositories on GitHub.
 
-It is designed for looking up Wednesware-style Boron repositories, caching results locally, and inspecting the repo structure without needing to clone or manually navigate the GitHub archive.
-
-## What Boron does today
-
-The implementation currently includes:
-
-- `parse_identifier()` to normalize a friendly name into a GitHub repository owner and Boron repo slug
-- `download_release()` to fetch the default-branch archive from GitHub and extract it to the cache
-- `lookup()` to find or refresh a repository snapshot, then return an `Information` tree
-- `Information` objects for directory/file traversal and nested file access
-- local lookup history and offline fallback behavior from `~/.boron/cache/lookups.json`
-- bookmark support for saving files and lookups for later browsing
-- a terminal-based interactive browser for file content, web/app opening, and clipboard copy
-- a small CLI with `help`, `license`, `lookup`, and `bm` commands
-
 ## Installation
 
-From the repository root:
+> `n2 get boron && n2 install-cache boron`
 
-```bash
-python -m pip install -e .
-```
+### Uninstall
 
-Required runtime dependencies:
+> `n2 uninstall boron`
 
-- Python 3.10+
-- Nitrogen (`pip install wwn`)
+## Quick start
 
-Optional dependencies:
-
-- `pyperclip` for the clipboard action
-
-  ```bash
-  python -m pip install pyperclip
-  ```
-
-- desktop app preview support when using the `open in app` action on Linux
-
-  ```bash
-  python -m pip install PyQt5 qtpy
-  # or
-  python -m pip install PySide6 qtpy
-  # or on Debian/Ubuntu:
-  sudo apt install python3-gi libgtk-3-0 libgtk-3-dev
-  ```
-
-If a GTK or Qt backend is unavailable, Boron falls back to opening the generated page in the browser instead of crashing.
-
-## Library API
-
-### `parse_identifier(identifier, no_format=False)`
-
-Normalizes a human-readable identifier into `(author, repo_name)`.
-
-Examples:
+### Resolve a normal Boron repository
 
 ```python
-from boron import parse_identifier
+from boron import parse_identifier, lookup
 
-parse_identifier("CoolDev's Gaming Information")
-# ('CoolDev', 'b_GamingInformation')
+author, repo = parse_identifier("CoolDev's Gaming Information")
+print(author, repo)  # CoolDev, b_GamingInformation
 
-parse_identifier("Johnathan John's PLAQUE INFO")
-# ('JohnathanJohn', 'b_plaqueinfo')
-
-parse_identifier("ashley myers' movies")
-# ('AshleyMyers', 'b_movies')
+info = lookup("CoolDev's Gaming Information")
+print(info.name)
+print(info["README.md"].content[:120])
 ```
 
-The repo name is normalized to a Boron-style name with a `b_` prefix, and spaces are ignored during normalization.
-
-### `lookup(identifier, cache_dir=None, offline=False)`
-
-Looks a repository up by identifier, downloads the default branch snapshot from GitHub, walks the extracted tree, and returns an `Information` object.
+### Fetch only documentation from a repo
 
 ```python
 from boron import lookup
 
-info = lookup("CoolDev's Gaming Information")
-print(info.name)
-print(info)
+info = lookup("documentation of CoolDev's Gaming Information")
+print(info.name)  # b_GamingInformation
+print(list(info.children.keys()))
+print(info["README.md"].content[:200])
 ```
 
-Behavior:
-
-- the default branch archive is fetched from GitHub
-- extracted directories beginning with `_` or `.` are excluded from the tree
-- previously seen lookups are cached in `lookups.json`
-- when `offline=True`, Boron will prefer a cached copy if one exists
-- if the network call fails for offline/rate-limit-style conditions, Boron can fall back to cached history instead of failing immediately
-
-### `download_release(author, repo_name, cache_dir=None)`
-
-Downloads and extracts the repo archive for the default branch to the local cache directory and returns the extracted directory path.
+### Fetch only the license text
 
 ```python
-from boron import download_release
+from boron import lookup
 
-root = download_release("CoolDev", "b_GamingInformation")
-print(root)
+info = lookup("license of CoolDev's Gaming Information")
+print(info.name)  # b_GamingInformation
+print(list(info.children.keys()))
+print(info["LICENSE.md"].content[:200])
 ```
 
-### `Information`
-
-`Information` is the tree node used to represent a file system snapshot.
+### Work with saved bookmarks
 
 ```python
-from boron import Information
+from boron import save_bookmark, list_bookmarks
+
+path = save_bookmark("# Example\nHello", "CoolDev", "b_GamingInformation", "README.md")
+print(path)
+print([entry["label"] for entry in list_bookmarks()])
 ```
 
-Attributes:
+## Dependencies
 
-- `name`: the node name
-- `kind`: either `directory` or `file`
-- `content`: file contents for file nodes
-- `path`: original filesystem path
-- `children`: nested entries for directory nodes
+- Python 3.12+
+- venv (`pip install virtualenv`) for the custom environment.
+- **Boron handles other dependencies automatically in its custom environment assuming you use the CLI/command to start it.** These dependencies include the following:
+  - Nitrogen 26.59+ (`pip install wwn`) for Wednesware-managed dependencies. These never need to be installed manually.
+    - Magnesium
+    - Sulfur
+    - Fluorine
+    - Iodine
+    - Neon
+  - Webview (`pip install pywebview`) as a Sulfur dependency for the `open in app` action.
+  - Pyperclip (`pip install pyperclip`) for the `copy content to clipboard` action.
+  - PySide6 (`pip install PySide6`) as a Sulfur dependency for the `open in app` action.
+  - qtpy (`pip install qtpy`) as a Sulfur dependency for the `open in app` action.
 
-Useful helpers:
+# Commands
 
-```python
-info["README.md"]
-info.get("docs/guide.md")
-info.get_file("docs/guide.md")
+Use Boron from the Python API or the CLI.
+
+```bash
+python -m boron --help
+python -m boron help
+python -m boron license
+python -m boron lookup "CoolDev's Gaming Information"
+python -m boron lookup "documentation of CoolDev's Gaming Information"
+python -m boron lookup "license of CoolDev's Gaming Information"
+python -m boron bm
 ```
 
-### `source(force=False, cache_dir=None, source_file=None)`
+## Command behavior
 
-Creates a Markdown summary of the cached Boron lookups and writes it to a target file when the content differs.
+- `help` shows the available CLI commands.
+- `license` prints the Boron project license text.
+- `lookup <identifier>` resolves and opens a repository snapshot for browsing.
+- `lookup "documentation of <author>'s <repo>"` fetches only the README/documentation file for that repository.
+- `lookup "license of <author>'s <repo>"` fetches only the LICENSE file for that repository.
+- `bm` opens the bookmark manager for saved lookup and file entries.
 
-```python
-from boron import source
+# Definitions
 
-source(force=True)
-```
+## `boron`
 
-This writes a list of deduplicated repository entries such as:
-
-```md
-# Boron Sources
-
-- [CoolDev/b_GamingInformation](https://github.com/CoolDev/b_GamingInformation)
-- [JohnathanJohn/b_plaqueinfo](https://github.com/JohnathanJohn/b_plaqueinfo)
-```
-
-If the destination file already matches the generated content, the function returns early and does nothing.
-
-### Bookmarks
-
-Boron includes bookmark helpers for saving and restoring lookup snapshots or file content:
+From the base package, you can import the core Boron helpers and types.
 
 ```python
 from boron import (
+    Information,
+    parse_identifier,
+    lookup,
+    download_release,
     save_bookmark,
     save_lookup_bookmark,
     list_bookmarks,
@@ -164,68 +117,145 @@ from boron import (
 )
 ```
 
-These write `.bbm` files under the Boron bookmark directory and restore them as either `Information` trees or plain file content.
+### `boron:Information`
 
-## CLI
+`Information` is the tree node object used to represent a repository snapshot. It can represent either a directory or a file, and it stores a name, content, path, and child entries.
 
-The project exposes a terminal CLI via `python -m boron` and, when installed as a console script, `boron`.
+```python
+info = Information(name="b_GamingInformation", kind="directory")
+info.children["README.md"] = Information(
+    name="README.md",
+    kind="file",
+    path="/tmp/README.md",
+    content="# Hello\n",
+)
+```
 
-Current commands:
+#### `boron:Information.get(path, default=None)`
+
+Resolve a nested node by slash-delimited path.
+
+```python
+readme = info.get("README.md")
+print(readme.name)
+```
+
+#### `boron:Information.get_file(path, default=None)`
+
+Return file contents for a nested file node, or the default value if the path does not resolve to a file.
+
+```python
+text = info.get_file("README.md")
+print(text)
+```
+
+### `boron:parse_identifier(identifier, no_format=False)`
+
+Normalize a human-readable identifier into the author and repository names expected by Boron.
+
+```python
+author, repo = parse_identifier("CoolDev's Gaming Information")
+print(author)  # CoolDev
+print(repo)    # b_GamingInformation
+```
+
+The function also supports the special documentation and license forms:
+
+```python
+parse_identifier("documentation of CoolDev's Gaming Information")
+# ('CoolDev', 'GamingInformation')
+
+parse_identifier("license of CoolDev's Gaming Information")
+# ('CoolDev', 'GamingInformation')
+```
+
+### `boron:lookup(identifier, cache_dir=None, offline=False)`
+
+Resolve a Boron repository by identifier, fetch its extracted snapshot, and return an `Information` tree for browsing.
+
+```python
+info = lookup("CoolDev's Gaming Information")
+print(info.name)
+print(info["README.md"].content[:200])
+```
+
+If `offline=True`, Boron will prefer a cached lookup. When the identifier starts with `documentation of` or `license of`, only the relevant file is kept in the returned tree.
+
+### `boron:download_release(author, repo_name, cache_dir=None)`
+
+Download and extract the default-branch archive for a Boron repository, returning the extracted root path.
+
+```python
+root = download_release("CoolDev", "b_GamingInformation")
+print(root)
+```
+
+### `boron:save_bookmark(content, author, source_title, item_name, bookmarks_dir=None)`
+
+Save a file snapshot to the bookmark store.
+
+```python
+save_bookmark("# Example\nHello", "CoolDev", "b_GamingInformation", "README.md")
+```
+
+### `boron:save_lookup_bookmark(info, author, source_title, bookmarks_dir=None, item_name=None)`
+
+Save an entire lookup tree as a bookmark so it can be reopened later.
+
+```python
+save_lookup_bookmark(info, "CoolDev", "b_GamingInformation")
+```
+
+### `boron:list_bookmarks(bookmarks_dir=None)`
+
+List all saved bookmark entries as metadata dictionaries.
+
+```python
+for entry in list_bookmarks():
+    print(entry["label"])
+```
+
+### `boron:load_bookmark(path)`
+
+Load a bookmark from disk and restore it as either an `Information` tree or a file payload.
+
+```python
+loaded = load_bookmark("/path/to/bookmark.bbm")
+print(type(loaded).__name__)
+```
+
+## `boron.lookup`
+
+The `boron.lookup` module re-exports the public repository lookup API.
+
+```python
+from boron.lookup import Information, lookup, download_release
+```
+
+### `boron.lookup:lookup(identifier, cache_dir=None, offline=False)`
+
+Equivalent to the package-level lookup helper, intended for callers that want the lookup API without importing the full package namespace.
+
+```python
+from boron.lookup import lookup
+info = lookup("documentation of CoolDev's Gaming Information")
+print(info["README.md"].content)
+```
+
+### `boron.lookup:download_release(author, repo_name, cache_dir=None)`
+
+Equivalent to the package-level archive download helper.
+
+```python
+from boron.lookup import download_release
+root = download_release("CoolDev", "b_GamingInformation")
+print(root)
+```
+
+## `boron.__main__`
+
+The CLI entry point is exposed through the package module and behaves the same as the installed `boron` command.
 
 ```bash
-python -m boron --help
-python -m boron help
-python -m boron license
 python -m boron lookup "CoolDev's Gaming Information"
-python -m boron bm
 ```
-
-Command behavior:
-
-- `help` shows the available commands
-- `license` prints the project license text
-- `lookup <identifier>` fetches the repo, renders the interactive file tree, and lets you open files in the browser/app, copy content, or bookmark them
-- `bm` opens the bookmark manager and lets you revisit saved lookups and files
-
-### Interactive lookup flow
-
-The lookup screen is terminal-driven and has options such as:
-
-- open in web
-- open in app
-- copy content to clipboard
-- bookmark this file
-- bookmark this lookup
-- source this
-- back
-- exit
-
-## Cache and offline behavior
-
-Boron stores lookup history in a local cache under:
-
-```text
-~/.boron/cache/lookups.json
-```
-
-This cache is used to:
-
-- avoid re-downloading same repos repeatedly
-- serve cached snapshots when the network is unavailable or GitHub rate-limits requests
-- supply historical data for offline browsing in the interactive lookup UI
-
-## Repository layout
-
-```text
-boron/
-  __init__.py
-  __main__.py
-  lookup.py
-
-tests/
-  test_boron.py
-```
-
-## License
-
-This project is licensed under the MIT License.
