@@ -264,15 +264,6 @@ def test_open_page_in_app_prefers_pywebview(monkeypatch, tmp_path):
     assert "browser" not in called
 
 
-def test_build_page_html_uses_marked_js():
-    html = boron._build_page_html("Docs", "# Title\n\n- one\n")
-
-    assert "<title>Docs</title>" in html
-    assert "marked.min.js" in html
-    assert "marked.parse(rawMarkdown)" in html
-    assert "raw-markdown" in html
-
-
 def test_main_recovers_nitrogen_before_help(monkeypatch, tmp_path):
     calls = []
 
@@ -359,3 +350,161 @@ def test_lookup_bookmarks_are_loaded_as_information_trees(tmp_path):
     assert isinstance(loaded, boron.Information)
     assert loaded.name == "b_GamingInformation"
     assert loaded["README.md"].content == "# Title\nHello"
+
+
+def test_grab_folder_copies_directory_tree(tmp_path):
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    (source_root / "docs").mkdir()
+    (source_root / "docs" / "guide.md").write_text("guide\n", encoding="utf-8")
+    (source_root / "README.md").write_text("hello\n", encoding="utf-8")
+
+    folder = boron.Information.from_directory(source_root, root_name="source")
+    target_root = tmp_path / "grabbed"
+
+    result = boron.grab_folder(folder, target_dir=target_root)
+
+    assert result == target_root / "source"
+    assert (result / "README.md").read_text(encoding="utf-8") == "hello\n"
+    assert (result / "docs" / "guide.md").read_text(encoding="utf-8") == "guide\n"
+
+
+def test_information_select_loop_opens_directory_action_shell(monkeypatch):
+    folder = boron.Information(name="docs", kind="directory")
+    child_dir = boron.Information(name="nested", kind="directory")
+    child_dir.children["guide.md"] = boron.Information(name="guide.md", kind="file", content="Guide")
+    folder.children["nested"] = child_dir
+
+    calls = {}
+
+    def fake_info_shell(**kwargs):
+        calls["folder"] = kwargs["info"]
+        calls["title"] = kwargs["info_title"]
+
+    selections = iter(["nested", boron.BACK_TEXT])
+
+    def fake_ui_run(menu, **kwargs):
+        return next(selections)
+
+    monkeypatch.setattr(boron, "info_shell", fake_info_shell)
+    monkeypatch.setattr(boron, "_ui_run", fake_ui_run)
+    monkeypatch.setattr(boron, "keymap", None, raising=False)
+
+    result = boron._information_select_loop(folder, "docs")
+
+    assert result is folder
+    assert calls["folder"] is child_dir
+    assert calls["title"] == "nested"
+
+
+def test_information_select_loop_supports_bookmark_lookup_without_file(monkeypatch):
+    info = boron.Information(name="b_GamingInformation", kind="directory")
+    info.children["README.md"] = boron.Information(name="README.md", kind="file", content="# Title\nHello")
+
+    calls = []
+
+    def fake_save_lookup_bookmark(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "bookmark-path"
+
+    def fake_ui_run(menu, **kwargs):
+        return "bookmark this lookup"
+
+    monkeypatch.setattr(boron, "save_lookup_bookmark", fake_save_lookup_bookmark)
+    monkeypatch.setattr(boron, "_ui_run", fake_ui_run)
+    monkeypatch.setattr(boron, "keymap", None, raising=False)
+
+    result = boron._information_select_loop(info, "b_GamingInformation", source_author="CoolDev", source_title="b_GamingInformation")
+
+    assert result is info
+    assert calls
+    assert calls[0][0][0] is info
+    assert calls[0][0][1] == "CoolDev"
+    assert calls[0][0][2] == "b_GamingInformation"
+
+
+def test_information_select_loop_supports_lookup_bookmark_action(monkeypatch):
+    info = boron.Information(name="b_GamingInformation", kind="directory")
+    info.children["README.md"] = boron.Information(name="README.md", kind="file", content="# Title\nHello")
+
+    saved = {}
+
+    def fake_save_lookup_bookmark(target_info, author, source_title, bookmarks_dir=None, item_name=None):
+        saved["target_info"] = target_info
+        saved["author"] = author
+        saved["source_title"] = source_title
+        saved["item_name"] = item_name
+        return Path("/tmp/bookmark.bbm")
+
+    def fake_ui_run(menu, **kwargs):
+        return "bookmark this lookup"
+
+    monkeypatch.setattr(boron, "save_lookup_bookmark", fake_save_lookup_bookmark)
+    monkeypatch.setattr(boron, "_ui_run", fake_ui_run)
+    monkeypatch.setattr(boron, "keymap", None, raising=False)
+
+    result = boron._information_select_loop(info, "b_GamingInformation", source_author="CoolDev", source_title="b_GamingInformation")
+
+    assert result is info
+    assert saved["target_info"] is info
+    assert saved["author"] == "CoolDev"
+    assert saved["source_title"] == "b_GamingInformation"
+    assert saved["item_name"] == "b_GamingInformation"
+
+
+def test_information_select_loop_supports_back_from_directory(monkeypatch):
+    folder = boron.Information(name="docs", kind="directory")
+    file_entry = boron.Information(name="guide.md", kind="file", content="Guide")
+    folder.children["guide.md"] = file_entry
+
+    calls = {"count": 0}
+
+    last_menu = {}
+
+    def fake_ui_run(menu, **kwargs):
+        calls["count"] += 1
+        last_menu["menu"] = menu
+        return boron.BACK_TEXT
+
+    monkeypatch.setattr(boron, "_ui_run", fake_ui_run)
+    monkeypatch.setattr(boron, "keymap", None, raising=False)
+
+    result = boron._information_select_loop(folder, "docs")
+
+    assert result is folder
+    assert calls["count"] == 1
+    assert boron.BACK_TEXT in last_menu["menu"].options
+
+
+def test_info_shell_directory_lists_child_entries_and_nested_folders(monkeypatch):
+    root = boron.Information(name="docs", kind="directory")
+    nested = boron.Information(name="nested", kind="directory")
+    nested.children["guide.md"] = boron.Information(name="guide.md", kind="file", content="Guide")
+    root.children["nested"] = nested
+    root.children["README.md"] = boron.Information(name="README.md", kind="file", content="# Title\nHello")
+
+    call_count = 0
+
+    def fake_run(menu, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        options = list(menu.options.keys())
+        if call_count == 1:
+            assert "nested" in options
+            assert "README.md" in options
+            return "nested"
+        assert "guide.md" in options
+        return boron.BACK_TEXT
+
+    monkeypatch.setattr(boron, "run", fake_run)
+    monkeypatch.setattr(boron, "keymap", None, raising=False)
+
+    boron.info_shell(
+        info=root,
+        source_info=root,
+        source_info_title="docs",
+        source_info_author="CoolDev",
+        info_title="docs",
+    )
+
+    assert call_count == 2

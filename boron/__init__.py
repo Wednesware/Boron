@@ -16,7 +16,6 @@ try:
     TextInput = require("iodine.widgets.text_input").TextInput
     SelectMenu = require("iodine.widgets.select").SelectMenu
     Color = require("magnesium.color").Color
-    App = require("sulfur").App
     info_window = require("sulfur").info
     error_window = require("sulfur").error
     Page = require("fluorine").Page
@@ -31,69 +30,7 @@ try:
 except ImportError:
     nitrogen_missing = True
 
-def _resolve_runtime(module_name: str, attr_name: str):
-    if require is None:
-        return None
-    try:
-        module_obj = require(module_name)
-    except Exception:
-        return None
-    return getattr(module_obj, attr_name, None)
-
-
-def run(*args, **kwargs):
-    runtime_run = _resolve_runtime("iodine", "run")
-    if runtime_run is None:
-        if not _ensure_nitrogen():
-            raise RuntimeError("boron: Nitrogen is not installed. Please install it using 'pip install wwn'.")
-        runtime_run = _resolve_runtime("iodine", "run")
-    if runtime_run is None:
-        raise RuntimeError("boron: Nitrogen is not installed. Please install it using 'pip install wwn'.")
-    return runtime_run(*args, **kwargs)
-
-
-def _ensure_nitrogen() -> bool:
-    global nitrogen_missing, require, run, Keymap, TextInput, SelectMenu, Color, App, info_window, error_window, Terminal, Page, div_tag, h1_tag, document, Script, event, title_tag
-
-    if not nitrogen_missing:
-        return True
-
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "wwn"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        return False
-
-    try:
-        from nitrogen import require
-        run = require("iodine").run
-        Keymap = require("iodine").Keymap
-        TextInput = require("iodine.widgets.text_input").TextInput
-        SelectMenu = require("iodine.widgets.select").SelectMenu
-        Color = require("magnesium.color").Color
-        App = require("sulfur").App
-        info_window = require("sulfur").info
-        error_window = require("sulfur").error
-        Terminal = require("neon.terminal").Terminal
-        Page = require("fluorine").Page
-        div_tag = require("fluorine.structuring").div
-        h1_tag = require("fluorine.structuring").h1
-        document = require("fluorine.scripting").document
-        Script = require("fluorine.scripting").Script
-        event = require("fluorine.scripting").event
-        title_tag = require("fluorine.structuring").title
-        nitrogen_missing = False
-        return True
-    except Exception:
-        return False
-
-
-
-VERSION: str = "26.3"
+VERSION: str = "26.4"
 
 BORON_DIR: Path = Path(os.environ.get("BORON_DIR", str(Path.home() / ".boron")))
 DEFAULT_CACHE_DIR: Path = BORON_DIR / "cache"
@@ -108,7 +45,7 @@ if not nitrogen_missing:
     if not nitrogen_missing:
         @keymap.on("CTRL_C")
         def handle_ctrl_c(_) -> None:
-            print("Operation cancelled by user.")
+            print("boron: Operation cancelled by user.")
             exit(0)
 
 @dataclass
@@ -638,7 +575,7 @@ def lookup(identifier: str, cache_dir: Path | str | None = None, offline: bool =
     except Exception as err:
         if _is_offline_fallback_error(err):
             if cached is not None:
-                print(f"Error: {err}")
+                print(f"boron: {err}")
                 return cached
             raise RuntimeError("Offline mode | Information may be outdated or incomplete. No cached copy was found for this lookup.") from err
         raise
@@ -657,9 +594,17 @@ def lookup(identifier: str, cache_dir: Path | str | None = None, offline: bool =
     shutil.rmtree(extracted_root, ignore_errors=True)
     return info
 
+def _clear_terminal() -> None:
+    if Terminal is not None and hasattr(Terminal, "clear"):
+        Terminal.clear()
+
+
 def _print_help() -> None:
-    print(f"\033[94m{Color.bold}Boron v{VERSION}{Color.reset}")
-    print(f"{Color.gray}Library-themed Python library and CLI for resolving information and documentation from Boron repositories on GitHub.{Color.reset}")
+    bold = getattr(Color, "bold", "") if Color is not None else ""
+    gray = getattr(Color, "gray", "") if Color is not None else ""
+    reset = getattr(Color, "reset", "") if Color is not None else ""
+    print(f"\033[94m{bold}Boron v{VERSION}{reset}")
+    print(f"{gray}Library-themed Python library and CLI for resolving information and documentation from Boron repositories on GitHub.{reset}")
     print("")
     print("Commands:")
     print("  help                         Show this help message")
@@ -693,6 +638,42 @@ def grab_file(info: Information, target_dir: Path | str | None = None) -> Path:
     return target
 
 
+def _write_information_tree(node: Information, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for child in node.children.values():
+        child_path = destination / child.name
+        if child.kind == "directory":
+            _write_information_tree(child, child_path)
+        else:
+            child_path.parent.mkdir(parents=True, exist_ok=True)
+            if child.content is None:
+                child_path.mkdir(parents=True, exist_ok=True)
+                continue
+            child_path.write_text(child.content, encoding="utf-8")
+
+
+def grab_folder(info: Information, target_dir: Path | str | None = None) -> Path:
+    if info.kind != "directory":
+        raise ValueError("Only directory entries can be grabbed from a lookup.")
+
+    dest_dir = Path(target_dir) if target_dir is not None else Path.cwd()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    source_path = Path(info.path) if info.path else None
+    if source_path is not None and source_path.exists() and source_path.is_dir():
+        target = dest_dir / source_path.name
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(source_path, target)
+        return target
+
+    target = dest_dir / (info.name or "folder")
+    if target.exists():
+        shutil.rmtree(target)
+    _write_information_tree(info, target)
+    return target
+
+
 def source_this(
     info: Information,
     *,
@@ -708,7 +689,7 @@ def source_this(
         or "lookup"
     ).strip() or "lookup"
     author_name = str(source_info_author or "unknown").strip() or "unknown"
-    line = f"* `{file_name}` from {lookup_name} by {author_name}"
+    line = f"- File: {file_name} | Lookup: {lookup_name} | Author: {author_name}"
 
     target = Path(source_path) if source_path is not None else Path.cwd() / "SOURCE.md"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -720,6 +701,51 @@ def source_this(
     if existing and not existing.endswith("\n"):
         existing += "\n"
     target.write_text(existing + line + "\n", encoding="utf-8")
+
+
+def source(force: bool = False, *, cache_dir: Path | str | None = None, source_file: Path | str | None = None) -> str:
+    target = Path(source_file) if source_file is not None else Path.cwd() / "SOURCE.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    history = _load_history(cache_dir)
+    repo_lines: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for entry in history:
+        owner = str(entry.get("owner") or "").strip()
+        repo = str(entry.get("repo") or "").strip()
+        if not owner or not repo:
+            continue
+        key = (owner, repo)
+        if key in seen:
+            continue
+        seen.add(key)
+        repo_lines.append(f"- [{owner}/{repo}](https://github.com/{owner}/{repo})")
+
+    content = "\n".join(repo_lines) + ("\n" if repo_lines else "")
+    if force or not target.exists():
+        target.write_text(content, encoding="utf-8")
+    return content
+
+def _open_page_in_app(path: str | Path) -> None:
+    target = str(path)
+    backend = _webview_backend()
+    if backend is not None:
+        try:
+            import webview
+            webview.create_window("Boron", target)
+            webview.start(gui=backend)
+            return
+        except Exception:
+            pass
+    if App is not None:
+        try:
+            page = Page("index")
+            page.build(target)
+            App(page).open()
+            return
+        except Exception:
+            pass
+    webbrowser.open(target)
 
 def _webview_backend() -> str | None:
     try:
@@ -739,25 +765,8 @@ def _webview_backend() -> str | None:
         pass
     return None
 
-
-def _open_page_in_app(path: str | Path) -> None:
-    try:
-        import webview
-    except ImportError:
-        webbrowser.open(str(path))
-        return
-
-    backend = _webview_backend()
-    if backend is None:
-        webbrowser.open(str(path))
-        return
-
-    webview.create_window("Boron", str(path))
-    webview.start(gui=backend)
-
-
 def _information_select_loop(info: Information, title: str, *, source_author: str | None = None, source_title: str | None = None) -> Information:
-    options: dict[str, Information] = {}
+    options: dict[str, Information | None] = {}
     for child_name, child in info.children.items():
         if child.kind == "file" and child.content is not None:
             content = child.content.strip()
@@ -769,25 +778,63 @@ def _information_select_loop(info: Information, title: str, *, source_author: st
                     options |= {heading: child}
                 continue
         options[child_name] = child
-    options |= {EXIT_TEXT: None}
+
+    author_name = str(source_author or "unknown").strip() or "unknown"
+    source_name = str(source_title or info.name or "lookup").strip() or "lookup"
+    lookup_bookmark_label = "[unbookmark lookup]" if has_bookmark(author_name, source_name, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark lookup]"
+    options[lookup_bookmark_label] = None
+    options |= {BACK_TEXT: None, EXIT_TEXT: None}
     while True:
-        Terminal.clear()
-        answer: str = run(SelectMenu(
-            options=options,
-            title=title,
-        ), global_keymap=keymap)
+        _clear_terminal()
+        answer: str = run(SelectMenu(options, title), global_keymap=keymap)
         if not answer:
             error_window("Invalid selection.")
             continue
         elif answer == EXIT_TEXT:
             handle_ctrl_c(None)
             continue
+        elif answer == BACK_TEXT:
+            print("boron: Lookup complete.")
+            return info
         elif answer == "---":
             continue
+        elif answer in {"[bookmark lookup]", "[unbookmark lookup]"}:
+            if answer == "[unbookmark lookup]":
+                removed = remove_bookmark(author_name, source_name, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
+                info_window("Lookup unbookmarked." if removed else "Lookup was not bookmarked.")
+                updated_label = "[bookmark lookup]" if not has_bookmark(author_name, source_name, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[unbookmark lookup]"
+            else:
+                save_lookup_bookmark(
+                    info,
+                    author_name,
+                    source_name,
+                    bookmarks_dir=DEFAULT_BOOKMARKS_DIR,
+                    item_name=info.name,
+                )
+                info_window("Lookup bookmarked.")
+                updated_label = "[unbookmark lookup]" if has_bookmark(author_name, source_name, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark lookup]"
+            options = {key: value for key, value in options.items() if key not in {"[bookmark lookup]", "[unbookmark lookup]"}}
+            options[updated_label] = None
+            continue
+        if answer not in options:
+            print("boron: Lookup complete.")
+            return info
         selected_option = options.get(answer)
         if selected_option is None:
-            print("Lookup complete.")
+            print("boron: Lookup complete.")
             return info
+        if selected_option.kind == "directory":
+            try:
+                info_shell(
+                    info=selected_option,
+                    source_info=info,
+                    source_info_title=source_title or info.name,
+                    source_info_author=source_author or "unknown",
+                    info_title=answer,
+                )
+            except KeyboardInterrupt:
+                pass
+            continue
         if selected_option.content is not None:
             if TextInput is not None:
                 try:
@@ -805,38 +852,117 @@ def _information_select_loop(info: Information, title: str, *, source_author: st
 
 
 def info_shell(info: Information, source_info: Information, source_info_title: str, source_info_author: str, info_title: str) -> None:
-    file_bookmark_label = "unbookmark this file" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "bookmark this file"
-    lookup_bookmark_label = "unbookmark this lookup" if has_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "bookmark this lookup"
+    if info.kind == "directory":
+        folder_bookmark_label = "unbookmark this folder" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
+        options: dict[str, Information | None] = {}
+        for child_name, child in info.children.items():
+            if child.kind == "file" and child.content is not None:
+                content = child.content.strip()
+                if content.startswith("#"):
+                    heading = content.split("\n", 1)[0].removeprefix("#").strip()
+                    if "(pinned)" in content.split("\n", 1)[0].lower():
+                        options = {heading: child} | options
+                    else:
+                        options |= {heading: child}
+                    continue
+            options[child_name] = child
+
+        options["[grab folder]"] = None
+        options[folder_bookmark_label] = None
+        options[BACK_TEXT] = None
+        options[EXIT_TEXT] = None
+
+        while True:
+            answer: str = run(SelectMenu(options, f"{info_title} ({info.name})"), global_keymap=keymap)
+            if not answer:
+                error_window("Invalid selection.")
+            elif answer == "[grab folder]":
+                try:
+                    target = grab_folder(info, Path.cwd())
+                except Exception as err:
+                    error_window(str(err))
+                else:
+                    info_window(f"Folder copied to {target}.")
+            elif answer in {"[bookmark folder]", "unbookmark this folder"}:
+                if answer == "unbookmark this folder":
+                    removed = remove_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
+                    info_window("Folder unbookmarked." if removed else "Folder was not bookmarked.")
+                else:
+                    save_lookup_bookmark(
+                        info,
+                        source_info_author,
+                        source_info_title,
+                        bookmarks_dir=DEFAULT_BOOKMARKS_DIR,
+                        item_name=info.name,
+                    )
+                    info_window("Folder bookmarked.")
+                updated_label = "unbookmark this folder" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
+                options = {key: value for key, value in options.items() if key not in {"[bookmark folder]", "unbookmark this folder"}}
+                options[updated_label] = None
+            elif answer == BACK_TEXT:
+                _clear_terminal()
+                return
+            elif answer == EXIT_TEXT:
+                exit(0)
+            elif answer not in options:
+                error_window("Invalid selection.")
+            else:
+                selected_option = options.get(answer)
+                if selected_option is None:
+                    continue
+                if selected_option.kind == "directory":
+                    try:
+                        info_shell(
+                            info=selected_option,
+                            source_info=info,
+                            source_info_title=source_info_title,
+                            source_info_author=source_info_author,
+                            info_title=answer,
+                        )
+                    except KeyboardInterrupt:
+                        pass
+                elif selected_option.content is not None:
+                    try:
+                        info_shell(
+                            info=selected_option,
+                            source_info=info,
+                            source_info_title=source_info_title,
+                            source_info_author=source_info_author,
+                            info_title=answer,
+                        )
+                    except KeyboardInterrupt:
+                        pass
+            _clear_terminal()
+
+    file_bookmark_label = "unbookmark this file" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark file]"
+    lookup_bookmark_label = "[unbookmark lookup]" if has_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark lookup]"
     options: list[str] = [
-        "open in web",
-        "open in app",
-        "copy content to clipboard",
-        "grab file",
+        "[open in web]",
+        "[open in app]",
+        "[copy content to clipboard]",
+        "[grab file]",
         file_bookmark_label,
         lookup_bookmark_label,
-        "source this",
+        "[source this]",
         BACK_TEXT,
         EXIT_TEXT
     ]
     while True:
-        Terminal.clear()
+        _clear_terminal()
         if info.content is None:
             print("[No file content available.]")
         elif not info.content:
             print("[File content is empty.]")
-        elif len(info.content) > 500 or info.content.count("\n") > 20:
+        elif len(info.content) > 2500 or info.content.count("\n") > 50:
             print("[File content is too large to display in the terminal. Please open it in the browser or app instead.]")
         else:
             print(info.content)
-        answer: str = run(SelectMenu(
-            options=options,
-            title=f"{info_title} ({info.name})",
-        ), global_keymap=keymap)
+        answer: str = run(SelectMenu(options, f"{info_title} ({info.name})"), global_keymap=keymap)
         if answer not in options:
             error_window(f"Invalid selection.")
         elif answer == "---":
             pass
-        elif answer in ["open in web", "open in app"]:
+        elif answer in ["[open in web]", "[open in app]"]:
             page: Page = Page("index") # type: ignore
             page.head(
                 title_tag (info.name)
@@ -865,15 +991,15 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                 ))
             path: str = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
             page.build(path)
-            if answer == "open in app":
-                _open_page_in_app(path)
+            if answer == "[open in app]":
+                require("sulfur").App(page).open()
             else:
                 webbrowser.open(str(path))
             try:
                 built_path = str(path)
             except Exception:
                 pass
-        elif answer == "copy content to clipboard":
+        elif answer == "[copy content to clipboard]":
             try:
                 import pyperclip
             except ImportError:
@@ -881,14 +1007,14 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                 exit(1)
             pyperclip.copy(info.content)
             info_window("Content copied to clipboard.")
-        elif answer == "grab file":
+        elif answer == "[grab file]":
             try:
                 target = grab_file(info, Path.cwd())
             except Exception as err:
                 error_window(str(err))
             else:
                 info_window(f"File copied to {target}.")
-        elif answer in {"bookmark this file", "unbookmark this file"}:
+        elif answer in {"[bookmark file]", "unbookmark this file"}:
             if answer == "unbookmark this file":
                 removed = remove_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
                 info_window("File unbookmarked." if removed else "File was not bookmarked.")
@@ -901,9 +1027,9 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                     bookmarks_dir=DEFAULT_BOOKMARKS_DIR,
                 )
                 info_window("File bookmarked.")
-            options[4] = "unbookmark this file" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "bookmark this file"
-        elif answer in {"bookmark this lookup", "unbookmark this lookup"}:
-            if answer == "unbookmark this lookup":
+            options[4] = "unbookmark this file" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark file]"
+        elif answer in {"[bookmark lookup]", "[unbookmark lookup]"}:
+            if answer == "[unbookmark lookup]":
                 removed = remove_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
                 info_window("Lookup unbookmarked." if removed else "Lookup was not bookmarked.")
             else:
@@ -914,8 +1040,8 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                     bookmarks_dir=DEFAULT_BOOKMARKS_DIR,
                 )
                 info_window("Lookup bookmarked.")
-            options[5] = "unbookmark this lookup" if has_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "bookmark this lookup"
-        elif answer == "source this":
+            options[5] = "[unbookmark lookup]" if has_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark lookup]"
+        elif answer == "[source this]":
             source_this(
                 info,
                 source_info=source_info,
@@ -924,11 +1050,11 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
             )
             info_window("File sourced to SOURCE.md.")
         elif answer == BACK_TEXT:
-            Terminal.clear()
+            _clear_terminal()
             return
         elif answer == EXIT_TEXT:
             exit(0)
-        Terminal.clear()
+        _clear_terminal()
 
 def lookup_shell(identifier: str) -> Information:
     offline_used = False
@@ -1004,10 +1130,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
             options = {entry["label"]: entry for entry in bookmarks}
-            answer: str = run(SelectMenu(
-                options=list(options.keys()),
-                title="Bookmarks",
-            ))
+            answer: str = run(SelectMenu(list(options.keys()), "Bookmarks"))
             if not answer:
                 return 0
             if answer not in options:
