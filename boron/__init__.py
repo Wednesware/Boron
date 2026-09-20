@@ -16,8 +16,6 @@ try:
     TextInput = require("iodine.widgets.text_input").TextInput
     SelectMenu = require("iodine.widgets.select").SelectMenu
     Color = require("magnesium.color").Color
-    info_window = require("sulfur").info
-    error_window = require("sulfur").error
     Page = require("fluorine").Page
     Terminal = require("neon.terminal").Terminal
     div_tag = require("fluorine.structuring").div
@@ -30,7 +28,7 @@ try:
 except ImportError:
     nitrogen_missing = True
 
-VERSION: str = "26.4"
+VERSION: str = "26.5"
 
 BORON_DIR: Path = Path(os.environ.get("BORON_DIR", str(Path.home() / ".boron")))
 DEFAULT_CACHE_DIR: Path = BORON_DIR / "cache"
@@ -726,46 +724,9 @@ def source(force: bool = False, *, cache_dir: Path | str | None = None, source_f
         target.write_text(content, encoding="utf-8")
     return content
 
-def _open_page_in_app(path: str | Path) -> None:
-    target = str(path)
-    backend = _webview_backend()
-    if backend is not None:
-        try:
-            import webview
-            webview.create_window("Boron", target)
-            webview.start(gui=backend)
-            return
-        except Exception:
-            pass
-    if App is not None:
-        try:
-            page = Page("index")
-            page.build(target)
-            App(page).open()
-            return
-        except Exception:
-            pass
-    webbrowser.open(target)
-
-def _webview_backend() -> str | None:
-    try:
-        import PySide6  # type: ignore
-        return "qt"
-    except Exception:
-        pass
-    try:
-        import gi  # type: ignore
-        return "gtk"
-    except Exception:
-        pass
-    try:
-        import webview  # type: ignore
-        return "cef"
-    except Exception:
-        pass
-    return None
-
 def _information_select_loop(info: Information, title: str, *, source_author: str | None = None, source_title: str | None = None) -> Information:
+    info_window = require("sulfur").info
+    error_window = require("sulfur").error
     options: dict[str, Information | None] = {}
     for child_name, child in info.children.items():
         if child.kind == "file" and child.content is not None:
@@ -852,6 +813,8 @@ def _information_select_loop(info: Information, title: str, *, source_author: st
 
 
 def info_shell(info: Information, source_info: Information, source_info_title: str, source_info_author: str, info_title: str) -> None:
+    info_window = require("sulfur").info
+    error_window = require("sulfur").error
     if info.kind == "directory":
         folder_bookmark_label = "unbookmark this folder" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
         options: dict[str, Information | None] = {}
@@ -992,13 +955,9 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
             path: str = tempfile.NamedTemporaryFile(suffix=".html", delete=False).name
             page.build(path)
             if answer == "[open in app]":
-                require("sulfur").App(page).open()
+                require("sulfur").App(path).open()
             else:
                 webbrowser.open(str(path))
-            try:
-                built_path = str(path)
-            except Exception:
-                pass
         elif answer == "[copy content to clipboard]":
             try:
                 import pyperclip
@@ -1134,7 +1093,7 @@ def main(argv: list[str] | None = None) -> int:
             if not answer:
                 return 0
             if answer not in options:
-                error_window("Invalid selection.")
+                require("sulfur").error("Invalid selection.")
                 return 1
 
             chosen = options[answer]
