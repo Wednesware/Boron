@@ -28,7 +28,7 @@ try:
 except ImportError:
     nitrogen_missing = True
 
-VERSION: str = "26.8"
+VERSION: str = "26.9"
 
 BORON_DIR: Path = Path(os.environ.get("BORON_DIR", str(Path.home() / ".boron")))
 DEFAULT_CACHE_DIR: Path = BORON_DIR / "cache"
@@ -1055,24 +1055,22 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     no_venv = "--no-venv" in argv
     argv = [arg for arg in argv if arg != "--no-venv"]
-
     if not no_venv:
-        print("Loading... (this can take a few seconds for the first time)")
+        print("Loading env...")
         _ensure_boron_dir()
         venv_python = _ensure_venv_dependencies(DEFAULT_VENV_DIR)
-        current_prefix = Path(sys.executable).parent.parent
-        target_prefix = venv_python.parent.parent
-        if current_prefix != target_prefix:
+        if Path(sys.prefix).resolve() != venv_python.parent.parent.resolve():
             env = os.environ.copy()
-            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1]) + os.pathsep + env.get("PYTHONPATH", "")
-
+            env["PYTHONPATH"] = (
+                str(Path(__file__).resolve().parents[1])
+                + os.pathsep
+                + env.get("PYTHONPATH", "")
+            )
             os.execve(
                 str(venv_python),
                 [str(venv_python), "-m", "boron", *argv, "--no-venv"],
-                env
+                env,
             )
-
-
     if not argv or argv[0] in {"help", "-h", "--help"}:
         _print_help()
         return 0
