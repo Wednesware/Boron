@@ -28,7 +28,7 @@ try:
 except ImportError:
     nitrogen_missing = True
 
-VERSION: str = "26.5"
+VERSION: str = "26.6"
 
 BORON_DIR: Path = Path(os.environ.get("BORON_DIR", str(Path.home() / ".boron")))
 DEFAULT_CACHE_DIR: Path = BORON_DIR / "cache"
@@ -1063,9 +1063,14 @@ def main(argv: list[str] | None = None) -> int:
         current_prefix = Path(sys.executable).parent.parent
         target_prefix = venv_python.parent.parent
         if current_prefix != target_prefix:
-            os.execv(
+            env: dict[str, str] = os.environ.copy()
+            project_root = str(Path(__file__).resolve().parent.parent)
+            env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+
+            os.execve(
                 str(venv_python),
                 [str(venv_python), "-m", "boron", *argv, "--no-venv"],
+                env,
             )
 
     if not argv or argv[0] in {"help", "-h", "--help"}:
