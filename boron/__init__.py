@@ -1063,9 +1063,17 @@ def main(argv: list[str] | None = None) -> int:
         current_prefix = Path(sys.executable).parent.parent
         target_prefix = venv_python.parent.parent
         if current_prefix != target_prefix:
-            env: dict[str, str] = os.environ.copy()
-            project_root = str(Path(__file__).resolve().parent.parent)
-            env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+            env = os.environ.copy()
+
+            project_root = Path(__file__).resolve().parents[1]
+            existing_pythonpath = env.get("PYTHONPATH")
+
+            if existing_pythonpath:
+                env["PYTHONPATH"] = os.pathsep.join(
+                    [str(project_root), existing_pythonpath]
+                )
+            else:
+                env["PYTHONPATH"] = str(project_root)
 
             os.execve(
                 str(venv_python),
