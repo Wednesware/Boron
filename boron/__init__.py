@@ -28,7 +28,7 @@ try:
 except ImportError:
     nitrogen_missing = True
 
-VERSION: str = "26.9"
+VERSION: str = "26.10"
 
 BORON_DIR: Path = Path(os.environ.get("BORON_DIR", str(Path.home() / ".boron")))
 DEFAULT_CACHE_DIR: Path = BORON_DIR / "cache"
@@ -1054,22 +1054,15 @@ def lookup_shell(identifier: str) -> Information:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     no_venv = "--no-venv" in argv
-    argv = [arg for arg in argv if arg != "--no-venv"]
+    argv.remove("--no-venv")
     if not no_venv:
         print("Loading env...")
         _ensure_boron_dir()
         venv_python = _ensure_venv_dependencies(DEFAULT_VENV_DIR)
         if Path(sys.prefix).resolve() != venv_python.parent.parent.resolve():
-            env = os.environ.copy()
-            env["PYTHONPATH"] = (
-                str(Path(__file__).resolve().parents[1])
-                + os.pathsep
-                + env.get("PYTHONPATH", "")
-            )
             os.execve(
                 str(venv_python),
-                [str(venv_python), "-m", "boron", *argv, "--no-venv"],
-                env,
+                [str(venv_python), __file__, *argv, "--no-venv"]
             )
     if not argv or argv[0] in {"help", "-h", "--help"}:
         _print_help()
@@ -1128,3 +1121,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Unknown command: {command}")
     _print_help()
     return 1
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
