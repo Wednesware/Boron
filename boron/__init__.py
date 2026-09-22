@@ -816,7 +816,7 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
     info_window = require("sulfur").info
     error_window = require("sulfur").error
     if info.kind == "directory":
-        folder_bookmark_label = "unbookmark this folder" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
+        folder_bookmark_label = "[unbookmark this folder]" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
         options: dict[str, Information | None] = {}
         for child_name, child in info.children.items():
             if child.kind == "file" and child.content is not None:
@@ -846,8 +846,8 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                     error_window(str(err))
                 else:
                     info_window(f"Folder copied to {target}.")
-            elif answer in {"[bookmark folder]", "unbookmark this folder"}:
-                if answer == "unbookmark this folder":
+            elif answer in {"[bookmark folder]", "[unbookmark this folder]"}:
+                if answer == "[unbookmark this folder]":
                     removed = remove_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
                     info_window("Folder unbookmarked." if removed else "Folder was not bookmarked.")
                 else:
@@ -859,8 +859,8 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                         item_name=info.name,
                     )
                     info_window("Folder bookmarked.")
-                updated_label = "unbookmark this folder" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
-                options = {key: value for key, value in options.items() if key not in {"[bookmark folder]", "unbookmark this folder"}}
+                updated_label = "[unbookmark this folder]" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark folder]"
+                options = {key: value for key, value in options.items() if key not in {"[bookmark folder]", "[unbookmark this folder]"}}
                 options[updated_label] = None
             elif answer == BACK_TEXT:
                 _clear_terminal()
@@ -897,7 +897,7 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                         pass
             _clear_terminal()
 
-    file_bookmark_label = "unbookmark this file" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark file]"
+    file_bookmark_label = "[unbookmark this file]" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark file]"
     lookup_bookmark_label = "[unbookmark lookup]" if has_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark lookup]"
     options: list[str] = [
         "[open in web]",
@@ -973,8 +973,8 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                 error_window(str(err))
             else:
                 info_window(f"File copied to {target}.")
-        elif answer in {"[bookmark file]", "unbookmark this file"}:
-            if answer == "unbookmark this file":
+        elif answer in {"[bookmark file]", "[unbookmark this file]"}:
+            if answer == "[unbookmark this file]":
                 removed = remove_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
                 info_window("File unbookmarked." if removed else "File was not bookmarked.")
             else:
@@ -986,7 +986,7 @@ def info_shell(info: Information, source_info: Information, source_info_title: s
                     bookmarks_dir=DEFAULT_BOOKMARKS_DIR,
                 )
                 info_window("File bookmarked.")
-            options[4] = "unbookmark this file" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark file]"
+            options[4] = "[unbookmark this file]" if has_bookmark(source_info_author, source_info_title, info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR) else "[bookmark file]"
         elif answer in {"[bookmark lookup]", "[unbookmark lookup]"}:
             if answer == "[unbookmark lookup]":
                 removed = remove_bookmark(source_info_author, source_info_title, source_info.name, bookmarks_dir=DEFAULT_BOOKMARKS_DIR)
